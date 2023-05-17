@@ -1,9 +1,16 @@
+/* eslint-disable no-console */
 import { FC, useContext, useEffect, useState } from 'react';
 import MessageBox from '@components/MessageBox';
 import { Message, ReactSetState } from '@interfaces';
 import GlobalContext from '@contexts/global';
 import { hasMathJax, initMathJax, renderMaxJax } from '@utils/markdown';
 import { hasMath } from '@utils';
+import { midjourneyConfigs } from '@configs';
+import {
+  type MessageAttachment,
+  type MessageItem,
+  isInProgress,
+} from 'midjourney-fetch';
 import MessageInput from './MessageInput';
 import ContentHeader from './ContentHeader';
 
@@ -54,12 +61,10 @@ const Content: FC<ContentProps> = ({ setActiveSetting }) => {
       ...msg,
       [currentId]: {
         ...conversations[currentId],
+        updatedAt: msgs.slice(-1)?.[0]?.createdAt,
         messages: msgs,
-        ...(msgs.length > 0
-          ? {
-              title: msgs[0].content,
-            }
-          : {}),
+        // If no title, set the first content
+        title: conversations[currentId].title || msgs[0].content,
       },
     }));
   };
@@ -207,6 +212,7 @@ const Content: FC<ContentProps> = ({ setActiveSetting }) => {
       ...map,
       [current]: true,
     }));
+    const model = configs.imageModel;
     try {
       const res = await fetch('/api/images', {
         method: 'POST',
@@ -216,30 +222,75 @@ const Content: FC<ContentProps> = ({ setActiveSetting }) => {
           size: configs.imageSize || '256x256',
           n: configs.imagesCount || 1,
           password: configs.password,
-          model: configs.imageModel,
+          model,
+          serverId: configs.discordServerId,
+          channelId: configs.discordChannelId,
+          token: configs.discordToken,
         }),
       });
       const { data = [], msg } = await res.json();
 
       if (res.status < 400) {
-        const params = new URLSearchParams(data?.[0]);
-        const expiredAt = params.get('se');
-        updateMessages(
-          allMessages.concat([
-            {
-              role: 'assistant',
-              content: data.map((url) => `![](${url})`).join('\n'),
-              createdAt: Date.now(),
-              expiredAt: new Date(expiredAt).getTime(),
-            },
-          ])
-        );
+        if (model === 'Midjourney') {
+          const times = midjourneyConfigs.timeout / midjourneyConfigs.interval;
+          let count = 0;
+          let image: MessageAttachment | null = null;
+          while (count < times) {
+            try {
+              count += 1;
+              await new Promise((resp) =>
+                setTimeout(resp, midjourneyConfigs.interval)
+              );
+              const message: MessageItem & { msg?: string } = await (
+                await fetch(
+                  `/api/images?model=Midjourney&prompt=${content}&serverId=${configs.discordServerId}&channelId=${configs.discordChannelId}&token=${configs.discordToken}`
+                )
+              ).json();
+              console.log(count, JSON.stringify(message));
+              // msg means error message
+              if (message && !message.msg && !isInProgress(message)) {
+                [image] = message.attachments;
+                break;
+              }
+            } catch (e) {
+              console.log(count, e.message || e.stack || e);
+              continue;
+            }
+          }
+          updateMessages(
+            allMessages.concat([
+              {
+                role: 'assistant',
+                content: image ? `![](${image.url})` : 'No result or timeout',
+                imageModel: model,
+                createdAt: Date.now(),
+              },
+            ])
+          );
+        } else {
+          const params = new URLSearchParams(data?.[0]);
+          const expiredAt = params.get('se');
+          updateMessages(
+            allMessages.concat([
+              {
+                role: 'assistant',
+                content: data.map((url) => `![](${url})`).join('\n'),
+                imageModel: model,
+                createdAt: Date.now(),
+                expiredAt: expiredAt
+                  ? new Date(expiredAt).getTime()
+                  : undefined,
+              },
+            ])
+          );
+        }
       } else {
         updateMessages(
           allMessages.concat([
             {
               role: 'assistant',
               content: `[${res.status}]Error: ${msg || 'Unknown'}`,
+              imageModel: model,
               createdAt: Date.now(),
             },
           ])
@@ -251,6 +302,7 @@ const Content: FC<ContentProps> = ({ setActiveSetting }) => {
           {
             role: 'assistant',
             content: `Error: ${e.message || e.stack || e}`,
+            imageModel: model,
             createdAt: Date.now(),
           },
         ])

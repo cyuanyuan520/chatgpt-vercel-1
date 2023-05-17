@@ -18,7 +18,7 @@ import Configuration from './Configuration';
 
 const styles = getComputedStyle(document.documentElement);
 
-const Main: FC<{ lang: Lang }> = ({ lang }) => {
+const Main: FC<{ lang: Lang; inVercel: boolean }> = ({ lang, inVercel }) => {
   // gloabl configs
   const [configs, setConfigs] = useState<Partial<GlobalConfig>>({});
 
@@ -29,10 +29,7 @@ const Main: FC<{ lang: Lang }> = ({ lang }) => {
   const [conversations, setConversations] = useState<
     Record<string, Conversation>
   >({
-    [defaultConversation.id]: {
-      ...defaultConversation,
-      title: i18n.status_empty,
-    },
+    [defaultConversation.id]: defaultConversation,
   });
 
   const [activeSetting, setActiveSetting] = useState(false);
@@ -40,17 +37,16 @@ const Main: FC<{ lang: Lang }> = ({ lang }) => {
   // media query
   const [isMobile, setIsMobile] = useState(isMatchMobile());
 
-  const list = Object.values(conversations)
-    .reverse()
-    .map((conversation) => ({
-      key: conversation.id,
-      mode: conversation.mode,
-      title: conversation.title,
-      message: conversation.messages.slice(-1)?.[0]?.content ?? '',
-      time:
-        conversation.messages.slice(-1)?.[0]?.createdAt ??
-        conversation.createdAt,
-    }));
+  const list = Object.values(conversations).map((conversation) => ({
+    key: conversation.id,
+    mode: conversation.mode,
+    title: conversation.title,
+    message: conversation.messages.slice(-1)?.[0]?.content ?? '',
+    time:
+      conversation.messages.slice(-1)?.[0]?.createdAt ??
+      conversation.updatedAt ??
+      conversation.createdAt,
+  }));
 
   // debounce resize
   const handleDebounceResize = debounce(() => {
@@ -65,7 +61,8 @@ const Main: FC<{ lang: Lang }> = ({ lang }) => {
     try {
       const localConversation = localStorage.getItem(localConversationKey);
       if (localConversation) {
-        const conversation = JSON.parse(localConversation);
+        const conversation: Record<string, Conversation> =
+          JSON.parse(localConversation);
         // historical localstorage
         if (Array.isArray(conversation) && conversation.length > 0) {
           setConversations({
@@ -78,9 +75,18 @@ const Main: FC<{ lang: Lang }> = ({ lang }) => {
           });
         } else {
           setConversations(conversation);
-          setCurrentId(
-            Object.keys(conversation)?.reverse()?.[0] ?? defaultConversation.id
-          );
+          if (isMobile) {
+            setCurrentId('');
+          } else {
+            setCurrentId(
+              Object.keys(conversation)?.sort((a, b) =>
+                (conversation?.[b]?.updatedAt ?? conversation?.[b]?.createdAt) >
+                (conversation?.[a]?.updatedAt ?? conversation?.[a]?.createdAt)
+                  ? 1
+                  : -1
+              )?.[0] ?? defaultConversation.id
+            );
+          }
         }
       }
     } catch (e) {
@@ -149,6 +155,7 @@ const Main: FC<{ lang: Lang }> = ({ lang }) => {
         setCurrentId,
         conversations,
         setConversations,
+        inVercel,
       }}
     >
       <ConfigProvider

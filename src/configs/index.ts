@@ -17,7 +17,11 @@ export type SupportedModel = (typeof supportedModels)[number];
 
 export const defaultModel: SupportedModel = 'gpt-3.5-turbo';
 
-export const supportedImageModels = ['DALL-E', 'Midjourney'] as const;
+export const supportedImageModels = [
+  'DALL-E',
+  'Midjourney',
+  'Replicate',
+] as const;
 
 export type SupportedImageModels = (typeof supportedImageModels)[number];
 
@@ -51,11 +55,20 @@ export const defaultGloablConfig: GlobalConfig = {
   imagesCount: 1,
   imageSize: '256x256',
   lang: 'en',
+  discordChannelId: '',
+  discordServerId: '',
+  discordToken: '',
 };
 
-export const defaultConversation: Omit<Conversation, 'title'> = {
+export const defaultConversation: Conversation = {
   id: '1',
+  title: '',
   messages: [],
   mode: 'text',
   createdAt: Date.now(),
+};
+
+export const midjourneyConfigs = {
+  timeout: 5 * 60 * 1000, // 5min
+  interval: 20 * 1000, // every 20 second
 };
